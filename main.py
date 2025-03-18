@@ -5,6 +5,8 @@ from PIL import Image
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
+import wave
+import struct
 
 console = Console()
 
@@ -158,7 +160,83 @@ def decodeImg(image_path):
 
     return message
 
+def encodeAudio(location, message, output_path):
+    try:
+        with wave.open(location, 'rb') as wave_read:
+            params = wave_read.getparams() 
+            frames = wave_read.readframes(params.nframes)
+            sample_width = params.sampwidth
+            # 32 bit pcm wav can tbe done as id have to write different logic for 4 bytes per sample
+            # the logic in theory is the same as image but with 4 bytes per sample 
+            if sample_width != 2:
+                console.print("[yellow]Warning: Only 16-bit PCM WAV files are fully supported.[/yellow]")
+            num_samples = params.nframes * params.nchannels
+            sample_format = "<" + "h" * num_samples
+            samples = list(struct.unpack(sample_format, frames))
+    except Exception as e:
+        console.print(f"[red]Error opening audio: {e}[/red]")
+        return
 
+    message_bits = toBinary(message)
+    message_length = len(message_bits)
+    length_bin = f"{message_length:032b}"
+    data_bits = list(length_bin) + message_bits
+
+    max_capacity = len(samples)  # one bit per sample
+    if len(data_bits) > max_capacity:
+        console.print("[red]Error: The audio file is too small for the message.[/red]")
+        return
+# embed the bit but with low depth as audio is more sensitive to changes
+    data_index = 0
+    new_samples = []
+    for sample in samples:
+        new_sample = sample
+        if data_index < len(data_bits):
+            bit = int(data_bits[data_index])
+            new_sample = embedBit(sample, bit)
+            data_index += 1
+        new_samples.append(new_sample)
+
+    try:
+        new_frames = struct.pack(sample_format, *new_samples)
+        with wave.open(output_path, 'wb') as wave_write:
+            wave_write.setparams(params)
+            wave_write.writeframes(new_frames)
+        console.print(f"[green]Message encoded successfully into [bold]{output_path}[/bold].[/green]")
+    except Exception as e:
+        console.print(f"[red]Error saving audio: {e}[/red]")
+def decodeAudio(location):
+    try:
+        with wave.open(location, 'rb') as wave_read:
+            params = wave_read.getparams()
+            frames = wave_read.readframes(params.nframes)
+            num_samples = params.nframes * params.nchannels
+            sample_format = "<" + "h" * num_samples
+            samples = list(struct.unpack(sample_format, frames))
+    except Exception as e:
+        console.print(f"[red]Error opening audio: {e}[/red]")
+        return None
+
+    bits = []
+    for sample in samples:
+        bits.append(str(sample & 1))
+
+    length_bits = bits[:32]
+    message_length = int(''.join(length_bits), 2)
+    start = 32
+    end = 32 + message_length
+    if end > len(bits):
+        console.print("[red]Error: Not enough data to decode the full message.[/red]")
+        return None
+
+    message_bits = bits[start:end]
+    try:
+        message = toPlain(message_bits)
+    except Exception as e:
+        console.print(f"[red]Error decoding message from audio: {e}[/red]")
+        return None
+
+    return message
 def menu():
     while True:
         console.print(Panel(
@@ -167,10 +245,13 @@ def menu():
             "[green]2.[/green] Simple Decode\n"
             "[green]3.[/green] Password-based Encode\n"
             "[green]4.[/green] Password-based Decode\n"
-            "[green]5.[/green] Exit",
+            "[green]6.[/green] Audio Encode\n"
+            "[green]7.[/green] Audio Decode\n"
+            "[green]8.[/green] Exit",
+            
             title="Menu", border_style="cyan"
         ))
-        choice = Prompt.ask("[yellow]What would you like to do - [/yellow]", choices=["1", "2", "3", "4", "5"])
+        choice = Prompt.ask("[yellow]What would you like to do - [/yellow]", choices=["1", "2", "3", "4", "5" , "6" , "7"])
         if choice == "1":
             image_path = Prompt.ask("[cyan]Enter path to source image[/cyan]")
             message = Prompt.ask("[cyan]Enter the message to encode[/cyan]")
@@ -197,6 +278,16 @@ def menu():
                 if decrypted_message is not None:
                     console.print(f"[green]Decoded message:[/green] [bold]{decrypted_message}[/bold]")
         elif choice == "5":
+            location = Prompt.ask("[cyan]Enter path to source audio[/cyan]")
+            message = Prompt.ask("[cyan]Enter the message to encode[/cyan]")
+            output_path = Prompt.ask("[cyan]Enter output audio path[/cyan]")
+            encodeAudio(location, message, output_path)
+        elif choice == "6":
+            location = Prompt.ask("[cyan]Enter path to the audio to decode[/cyan]")
+            message = decodeAudio(location)
+            if message is not None:
+                console.print(f"[green]Decoded message:[/green] [bold]{message}[/bold]")
+        elif choice == "7":
             console.print("[magenta]Sad to see you go...[/magenta]")
             break
 

@@ -1,11 +1,11 @@
 # CLI Steg
 
-Image Steganography, in you command line
+Image & Audio Steganography, in you command line
 
 ## Features
 
 - Encode & Decode Messages
-- Encrypt & Decrypt Messages with a password
+- Encrypt & Decrypt Messages with a password [IMG only]
 - Cross-platform support
 
 ## Installation
@@ -34,6 +34,8 @@ We only alter it by ±1 though otherwise the changes to the color are noticeable
 For decoding the length is stored in the first 32 bits and its just simple decryption password based is a very simple xor encryption.
 
 RGBA - Traditionally one might use RGB and encode values but it would cause changes to alpha channel which govern transparency and would be noticeable with backgroundless images so we use rgba instead.
+
+Its quite similar for audio steganography but we encode the message into the frequency of the audio file. ( literally like interstellar )
 
 
 ## License
